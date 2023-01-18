@@ -763,7 +763,18 @@ class LatentBlending():
    
     @torch.no_grad()
     def get_mixed_conditioning(self, fract_mixing):
-        if self.mode == 'standard':
+        print('get_mixed_conditioning', self.image_to_image)
+        if self.image_to_image:
+            text_embeddings_mix = interpolate_linear(self.text_embedding1, self.text_embedding2, fract_mixing)
+            print('get cond1')
+            cond, uc_full = self.sdh.get_cond_upscaling(self.image1_lowres, text_embeddings_mix, 20, image_to_image=True)
+            print('get cond2')
+            condB, uc_fullB = self.sdh.get_cond_upscaling(self.image2_lowres, text_embeddings_mix, 20, image_to_image=True)
+            cond['c_concat'][0] = interpolate_spherical(cond['c_concat'][0], condB['c_concat'][0], fract_mixing)
+            uc_full['c_concat'][0] = interpolate_spherical(uc_full['c_concat'][0], uc_fullB['c_concat'][0], fract_mixing)
+            list_conditionings = [cond, uc_full]
+            print('conditionings', list_conditionings)
+        elif self.mode == 'standard':
             text_embeddings_mix = interpolate_linear(self.text_embedding1, self.text_embedding2, fract_mixing)
             list_conditionings = [text_embeddings_mix]
         elif self.mode == 'inpaint':
@@ -773,13 +784,6 @@ class LatentBlending():
             text_embeddings_mix = interpolate_linear(self.text_embedding1, self.text_embedding2, fract_mixing)
             cond, uc_full = self.sdh.get_cond_upscaling(self.image1_lowres, text_embeddings_mix, self.noise_level_upscaling)
             condB, uc_fullB = self.sdh.get_cond_upscaling(self.image2_lowres, text_embeddings_mix, self.noise_level_upscaling)
-            cond['c_concat'][0] = interpolate_spherical(cond['c_concat'][0], condB['c_concat'][0], fract_mixing)
-            uc_full['c_concat'][0] = interpolate_spherical(uc_full['c_concat'][0], uc_fullB['c_concat'][0], fract_mixing)
-            list_conditionings = [cond, uc_full]
-        elif self.image_to_image:
-            text_embeddings_mix = interpolate_linear(self.text_embedding1, self.text_embedding2, fract_mixing)
-            cond, uc_full = self.sdh.get_cond_upscaling(self.image1_lowres, text_embeddings_mix, 20, image_to_image=True)
-            condB, uc_fullB = self.sdh.get_cond_upscaling(self.image2_lowres, text_embeddings_mix, 20, image_to_image=True)
             cond['c_concat'][0] = interpolate_spherical(cond['c_concat'][0], condB['c_concat'][0], fract_mixing)
             uc_full['c_concat'][0] = interpolate_spherical(uc_full['c_concat'][0], uc_fullB['c_concat'][0], fract_mixing)
             list_conditionings = [cond, uc_full]
