@@ -100,8 +100,11 @@ def make_batch_superres(
     return batch
 
 
-def make_noise_augmentation(model, batch, noise_level=None):
-    x_low = batch[model.low_scale_key]
+def make_noise_augmentation(model, batch, noise_level=None, image_to_image=False):
+    low_scale_key = 0
+    if not image_to_image:
+        low_scale_key = model.low_scale_key
+    x_low = batch[low_scale_key]
     x_low = x_low.to(memory_format=torch.contiguous_format).float()
     x_aug, noise_level = model.low_scale_model(x_low, noise_level)
     return x_aug, noise_level
@@ -256,7 +259,7 @@ class StableDiffusionHolder:
         return c
     
     @torch.no_grad()
-    def get_cond_upscaling(self, image, text_embedding, noise_level):
+    def get_cond_upscaling(self, image, text_embedding, noise_level, image_to_image=False):
         r"""
         Initializes the conditioning for the x4 upscaling model.
         """

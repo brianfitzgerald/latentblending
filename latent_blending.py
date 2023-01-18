@@ -54,6 +54,7 @@ class LatentBlending():
             guidance_scale: float = 4,
             guidance_scale_mid_damper: float = 0.5,
             mid_compression_scaler: float = 1.2,
+            image_to_image=False
         ):
         r"""
         Initializes the latent blending class.
@@ -107,6 +108,7 @@ class LatentBlending():
         self.branch1_influence = 0.0
         self.branch1_fract_crossfeed = 0.65
         self.branch1_insertion_completed = False
+        self.image_to_image = image_to_image
         self.set_guidance_scale(guidance_scale)
         self.init_mode()
         
@@ -771,6 +773,13 @@ class LatentBlending():
             text_embeddings_mix = interpolate_linear(self.text_embedding1, self.text_embedding2, fract_mixing)
             cond, uc_full = self.sdh.get_cond_upscaling(self.image1_lowres, text_embeddings_mix, self.noise_level_upscaling)
             condB, uc_fullB = self.sdh.get_cond_upscaling(self.image2_lowres, text_embeddings_mix, self.noise_level_upscaling)
+            cond['c_concat'][0] = interpolate_spherical(cond['c_concat'][0], condB['c_concat'][0], fract_mixing)
+            uc_full['c_concat'][0] = interpolate_spherical(uc_full['c_concat'][0], uc_fullB['c_concat'][0], fract_mixing)
+            list_conditionings = [cond, uc_full]
+        elif self.image_to_image:
+            text_embeddings_mix = interpolate_linear(self.text_embedding1, self.text_embedding2, fract_mixing)
+            cond, uc_full = self.sdh.get_cond_upscaling(self.image1_lowres, text_embeddings_mix, 20, image_to_image=True)
+            condB, uc_fullB = self.sdh.get_cond_upscaling(self.image2_lowres, text_embeddings_mix, 20, image_to_image=True)
             cond['c_concat'][0] = interpolate_spherical(cond['c_concat'][0], condB['c_concat'][0], fract_mixing)
             uc_full['c_concat'][0] = interpolate_spherical(uc_full['c_concat'][0], uc_fullB['c_concat'][0], fract_mixing)
             list_conditionings = [cond, uc_full]
