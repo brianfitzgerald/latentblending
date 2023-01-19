@@ -27,6 +27,7 @@ import subprocess
 import warnings
 import torch
 from tqdm.auto import tqdm
+from tqdm import trange
 from PIL import Image
 # import matplotlib.pyplot as plt
 import torch
@@ -119,6 +120,7 @@ class StableDiffusionHolder:
                  width: Optional[int] = None,
                  device: str = None,
                  precision: str='autocast',
+                 init_image_strength=0.6,
                  ):
         r"""
         Initializes the stable diffusion holder, which contains the models and sampler.
@@ -145,6 +147,7 @@ class StableDiffusionHolder:
         self.C = 4
         self.ddim_eta = 0
         self.num_inference_steps = num_inference_steps
+        self.init_image_strength = init_image_strength
         
         if height is None and width is None:
             self.init_auto_res()
@@ -278,11 +281,48 @@ class StableDiffusionHolder:
         
         return cond, uc_full
 
+
+    @torch.no_grad()
+    def run_diffusion_img2img(
+            self, 
+            text_embeddings: torch.FloatTensor, 
+            init_latent: torch.FloatTensor ,
+            idx_start: int = -1, 
+            idx_stop: int = -1, 
+            return_image: Optional[bool] = False
+        ):
+        
+        
+        precision_scope = autocast if self.precision == "autocast" else nullcontext
+        generator = torch.Generator(device=self.device).manual_seed(int(self.seed))
+        shape_latents = [self.C, self.height // self.f, self.width // self.f]
+    
+        self.sampler.make_schedule(ddim_num_steps=self.num_inference_steps-1, ddim_eta=self.ddim_eta, verbose=False)
+        C, H, W = shape_latents
+        size = (1, C, H, W)
+        latents = torch.randn(size, generator=generator, device=self.device)
+
+        t_enc = int(self.init_image_strength * self.num_inference_steps)
+
+        with precision_scope("cuda"):
+            with self.model.ema_scope():
+                uc = None
+                # encode (scaled latent)
+                z_enc = self.sampler.stochastic_encode(init_latent, torch.tensor([t_enc] * 1).to(self.device))
+                # decode it
+                samples = self.sampler.decode(z_enc, text_embeddings, t_enc, unconditional_guidance_scale=self.guidance_scale,
+                                            unconditional_conditioning=uc)
+
+                if return_image:        
+                    return self.latent2image(samples)
+                else:
+                    return samples
+
     @torch.no_grad()
     def run_diffusion_standard(
             self, 
             text_embeddings: torch.FloatTensor, 
-            latents_for_injection: torch.FloatTensor = None, 
+            latents_for_injection: torch.FloatTensor = None,
             idx_start: int = -1, 
             idx_stop: int = -1, 
             return_image: Optional[bool] = False

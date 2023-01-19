@@ -39,6 +39,8 @@ torch.set_grad_enabled(False)
 from omegaconf import OmegaConf
 from torch import autocast
 from contextlib import nullcontext
+from einops import rearrange, repeat
+import PIL
 
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.util import instantiate_from_config
@@ -181,6 +183,13 @@ class LatentBlending():
             image: Image
         """
         self.image1_lowres = image
+    
+    def set_image_to_image(self, img1, img2):
+        self.image_to_image = True
+        self.img1 = self.load_img(img1).to(self.device)
+        self.img2 = self.load_img(img2).to(self.device)
+        self.ccA = self.sdh.model.get_first_stage_encoding(self.sdh.model.encode_first_stage(self.img1))
+        self.ccB = self.sdh.model.get_first_stage_encoding(self.sdh.model.encode_first_stage(self.img2))
         
     def set_image2(self, image: Image):
         r"""
@@ -678,6 +687,17 @@ class LatentBlending():
 
         print(f"run_upscaling_step1: completed! {dp_img}")
         
+    def load_img(self, path):
+        image = Image.open(path).convert("RGB")
+        w, h = image.size
+        print(f"loaded input image of size ({w}, {h}) from {path}")
+        w, h = map(lambda x: x - x % 64, (w, h))  # resize to integer multiple of 64
+        image = image.resize((w, h), resample=PIL.Image.LANCZOS)
+        image = np.array(image).astype(np.float32) / 255.0
+        image = image[None].transpose(0, 3, 1, 2)
+        image = torch.from_numpy(image)
+        return 2. * image - 1.
+
         
     def run_upscaling_step2(
             self, 
@@ -767,10 +787,8 @@ class LatentBlending():
         if self.image_to_image:
             text_embeddings_mix = interpolate_linear(self.text_embedding1, self.text_embedding2, fract_mixing)
             print('get cond1')
-            cond, uc_full = self.sdh.get_cond_upscaling(self.image1_lowres, text_embeddings_mix, 20, image_to_image=True)
             print('get cond2')
-            condB, uc_fullB = self.sdh.get_cond_upscaling(self.image2_lowres, text_embeddings_mix, 20, image_to_image=True)
-            cond['c_concat'][0] = interpolate_spherical(cond['c_concat'][0], condB['c_concat'][0], fract_mixing)
+            cond['c_concat'][0] = interpolate_spherical(self.ccA['c_concat'][0], self.ccB['c_concat'][0], fract_mixing)
             uc_full['c_concat'][0] = interpolate_spherical(uc_full['c_concat'][0], uc_fullB['c_concat'][0], fract_mixing)
             list_conditionings = [cond, uc_full]
             print('conditionings', list_conditionings)
